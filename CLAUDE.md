@@ -12,14 +12,16 @@ operator's branding in `data.mjs`.
 
 | Path | What |
 |---|---|
-| `index.html` | The console: record browser, live try-it panel, and a generator that emits the Genesys data action JSON **with the deployed hostname baked in** |
+| `index.html` | The control panel: dataset and field picker, record browser, try-it panel, and a generator that emits the Genesys data action **with the deployed hostname baked in** |
 | `netlify/functions/api.mjs` | The whole API. One function, hand-rolled router |
-| `netlify/functions/lib/data.mjs` | The 12 records and the `FIELDS` list |
+| `netlify/functions/lib/data.mjs` | 12 shared people plus four industry payloads |
 | `genesys/*.custom.json` | Reference data action exports, host left as `YOUR-SITE.netlify.app` |
 | `local-server.mjs` | `node local-server.mjs` → localhost:8888, runs the real function |
+| `PROMPT.md` | Rebuild prompt v1 — interviews you about fields up front |
+| `PROMPT-V2.md` | Rebuild prompt v2 — asks only for the Netlify URL; fields are chosen in the deployed page |
 | `TEACHING-PROMPT.md` | Session script for teaching a partner to build this from scratch |
 
-## Three invariants — do not "simplify" these away
+## Four invariants — do not "simplify" these away
 
 1. **`/lookup` always returns HTTP 200 with every field present**, unknown numbers
    included. A field missing from the response fails the Genesys output contract at
@@ -29,13 +31,31 @@ operator's branding in `data.mjs`.
    arrives here as a space. Normalising server-side is what keeps Architect simple.
 3. **`/customers` returns `[]`, not 404**, for a filter with no hits — mockapi.io
    semantics, so an action originally built against mockapi.io still works.
+4. **`industry` defaults to telco; an unknown one is a 400**, never a silent fallback.
+   A typo in a `requestUrlTemplate` must fail loudly rather than quietly serve the wrong
+   dataset — that is the kind of bug you only find on stage.
 
-## Adding a field
+## How the field picker works
 
-Add the key to every record in `data.mjs`, name it in `FIELDS`, and — for `/lookup`
-only — add it to `flatten()` in `api.mjs`. That second step is deliberately manual so
-the output contract can't drift without someone noticing. Then regenerate the data
-action JSON from the console page and re-import it in Genesys.
+`/lookup` always returns every field its dataset holds. The checkboxes change the **data
+action**, not the API: a tick adds the field to the output contract, the translation map
+and the success template together. So field selection needs no redeploy, and the three
+pieces cannot fall out of step because they are all generated from one `chosen()` list.
+
+`/api/v1/industries` returns, per dataset, both the stored fields and the *expanded*
+output-contract fields — money fields carry a `Text` companion, dates a `Spoken` one.
+The page renders entirely from that, so it never hardcodes a schema. Adding an industry
+to `data.mjs` makes it appear in the dropdown with no page change.
+
+## Adding a field or a dataset
+
+Add the key to every record under the industry's `data` map in `data.mjs` and declare it
+in that industry's `fields` with a type of `string`, `number`, `money` or `date`.
+Companions and the output contract are derived, so there is nothing to change in
+`api.mjs`. Then regenerate the data action from the console and re-import it.
+
+Dates are stored as **day offsets from today**, not ISO strings. It looks odd in the
+dataset and it is why the demo does not expire.
 
 ## Deploying
 

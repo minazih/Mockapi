@@ -2,36 +2,47 @@
 
 A mockapi.io-style fake backend, hosted on Netlify, for Genesys Cloud **web services
 data actions**. Look a caller up by phone number in an IVR or bot flow and get back
-their name, account number, bill amount and device type.
+their name and whichever account fields you pick.
 
-**Live:** `https://YOUR-SITE.netlify.app` — the root page is a console: browse the
-records, fire test calls, and download a ready-to-import Genesys data action with your
-real hostname already baked in.
+**Live:** `https://YOUR-SITE.netlify.app` — the root page is the control panel. Choose a
+dataset, tick the fields you want returned, fire test calls, and download a
+ready-to-import Genesys data action with your hostname already baked in.
 
 ## The data
 
-Twelve records, four fields each.
+One cast of twelve people — `id`, `phoneNumber`, `firstName` — with four industry
+payloads over the top. **The phone numbers are the same in every industry**, so a demo
+script survives switching dataset; only the returned fields change.
 
-| Field | Type | Note |
-|---|---|---|
-| `id` | integer | Record id, mockapi.io convention |
-| `phoneNumber` | string | Lookup key, E.164 |
-| `firstName` | string | Greet the caller with this |
-| `accountNumber` | string | Account reference |
-| `billAmount` | number | Outstanding balance in SAR |
-| `deviceType` | string | Handset or CPE model |
+| Dataset | Fields on top of the common three |
+|---|---|
+| `telco` (default) | `accountNumber`, `billAmount` (money), `deviceType` |
+| `banking` | `accountNumber`, `balance` (money), `cardType`, `cardStatus` |
+| `retail` | `loyaltyId`, `orderNumber`, `orderStatus`, `orderTotal` (money), `deliveryDate` (date) |
+| `insurance` | `policyNumber`, `policyType`, `premiumAmount` (money), `renewalDate` (date), `claimStatus` |
 
-Test numbers run `+966501234001` … `+966501234012`. Anything else returns the
-not-found shape.
+Field types drive what the API generates. A **money** field gains a `<name>Text`
+companion — `"SAR 412.50"`, which TTS reads correctly where `412.5` does not. A **date**
+field is stored as a *day offset* and emitted as ISO plus a `<name>Spoken` companion like
+`"Monday, 17 August 2026"`. Offsets rather than fixed dates, so the demo does not go
+stale the week after you record it.
+
+Test numbers run `+966501234001` … `+966501234012`. Anything else returns the not-found
+shape.
 
 ## Endpoints
 
+`industry` defaults to `telco`, so an action that never sends it keeps working. An
+*unknown* industry is a 400 listing the valid ones — never a silent fallback, because a
+typo in a URL template should be loud.
+
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/api/v1/lookup?phoneNumber=+966501234001` | **One flat object.** Always HTTP 200, every field always present. **Use this from Genesys.** |
-| GET | `/api/v1/customers?phoneNumber=+966501234001` | Array with 0 or 1 records — mockapi.io-compatible |
-| GET | `/api/v1/customers` | All records (`?limit=` to trim) |
-| GET | `/api/v1/customers/:id` | One record by id |
+| GET | `/api/v1/lookup?phoneNumber=+966501234001&industry=` | **One flat object.** Always HTTP 200, every field always present. **Use this from Genesys.** |
+| GET | `/api/v1/customers?phoneNumber=+966501234001&industry=` | Array with 0 or 1 records — mockapi.io-compatible |
+| GET | `/api/v1/customers?industry=` | All records (`?limit=` to trim) |
+| GET | `/api/v1/customers/:id?industry=` | One record by id |
+| GET | `/api/v1/industries` | Every dataset, its fields and its output contract — this is what makes the console self-configuring |
 | GET | `/api/v1/health` | Liveness probe |
 
 ```json
@@ -39,20 +50,30 @@ not-found shape.
 {
   "found": true,
   "lookupStatus": "FOUND",
+  "industry": "telco",
   "phoneNumber": "+966501234001",
   "firstName": "Ahmed",
+  "currency": "SAR",
   "accountNumber": "ACC-884101",
   "billAmount": 412.5,
   "billAmountText": "SAR 412.50",
-  "currency": "SAR",
   "deviceType": "iPhone 16 Pro"
 }
 ```
 
-Two extras beyond the four fields, both there to make the Architect side easier:
-`found` / `lookupStatus` give you something to branch on, and `billAmountText` is the
-form TTS reads correctly — text-to-speech says "four hundred and twelve point five"
-for `412.5`, but "SAR 412.50" comes out right.
+`found` / `lookupStatus` exist to give a flow something to branch on for the
+unknown-caller path.
+
+## Choosing fields without a redeploy
+
+`/lookup` always returns every field its dataset has. The console's field checkboxes
+change the **data action**, not the API — ticking a field adds it to the output contract,
+the translation map and the success template together, unticking removes it from all
+three. So you can reshape what Genesys receives live, mid-demo, and re-import in seconds.
+
+Defining genuinely new field *names* is the one thing that does need a redeploy — the API
+cannot invent data it does not hold. The **Custom fields…** option generates both the
+data action and a paste-ready dataset snippet for `data.mjs`.
 
 ### Three behaviours that exist because data actions break on them
 
