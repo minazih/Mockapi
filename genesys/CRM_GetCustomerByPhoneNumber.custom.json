@@ -4,7 +4,7 @@
   "actionType": "custom",
   "config": {
     "request": {
-      "requestUrlTemplate": "https://YOUR-SITE.netlify.app/api/v1/lookup?phoneNumber=${input.phoneNumber}",
+      "requestUrlTemplate": "https://nizar-mockapi.netlify.app/api/v1/lookup?phoneNumber=${input.phoneNumber}&industry=telco",
       "requestType": "GET",
       "headers": {},
       "requestTemplate": "${input.rawRequest}"
