@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mock CRM API — Genesys Cloud data action backend</title>
+<title>Mock CRM API — Genesys Cloud Web data action backend</title>
 <style>
   :root {
     --bg: #f7f8fb; --grid: #e8ebf2; --card: #ffffff; --ink: #101322; --muted: #666e85;
@@ -134,12 +134,18 @@
   </div>
 
   <div class="card">
-    <h2>Genesys Cloud data action</h2>
+    <h2>Genesys Cloud Web data action</h2>
     <p class="lede" style="margin-bottom:16px">
       Generated against <strong id="origin2" class="mono"></strong>. Download it, then in Genesys Cloud go to
       <strong>Admin → Integrations → Actions → Import</strong>, pick the file and select your
       <em>Web Services Data Actions</em> integration.
     </p>
+    <div class="row" id="siteRow">
+      <label for="siteUrl" style="font-size:13px;color:var(--muted)">Public site URL</label>
+      <input type="text" id="siteUrl" style="min-width:340px" placeholder="https://your-site.netlify.app">
+      <button onclick="applySite()">Apply</button>
+      <span id="siteNote" style="font-size:13px;color:var(--amber)"></span>
+    </div>
     <div class="tabs">
       <button class="on" onclick="showAction('flat', this)">Flat object — recommended</button>
       <button onclick="showAction('array', this)">Array — matches your mockapi action</button>
@@ -156,10 +162,43 @@
 </div>
 
 <script>
-const ORIGIN = location.origin;
-const BASE = ORIGIN + "/api/v1";
-document.getElementById("host").textContent = location.host;
-document.getElementById("origin2").textContent = ORIGIN;
+// Two different base URLs, and conflating them is the bug this avoids:
+//
+//   BASE        — where THIS page sends its own test calls. Always the origin
+//                 it was served from, so the try-it panel works anywhere.
+//   publicBase  — what the generated data action tells Genesys Cloud to call.
+//                 Genesys cannot reach localhost, so when previewing locally we
+//                 fall back to SITE_URL and let the field on the page override.
+//
+// Deployed to Netlify the two are the same and none of this is visible.
+
+const SITE_URL = "https://your-site.netlify.app"; // ← default when previewing locally
+const BASE = location.origin + "/api/v1";
+
+const isLocal = /^(localhost|127\.|0\.0\.0\.0|\[?::1)/.test(location.hostname);
+let publicOrigin = (localStorage.getItem("mockcrm.site") || "").trim()
+  || (isLocal ? SITE_URL : location.origin);
+const publicBase = () => publicOrigin.replace(/\/+$/, "") + "/api/v1";
+
+function paintOrigin() {
+  document.getElementById("host").textContent = publicOrigin.replace(/^https?:\/\//, "");
+  document.getElementById("origin2").textContent = publicOrigin;
+  document.getElementById("siteUrl").value = publicOrigin;
+  document.getElementById("siteNote").textContent = isLocal
+    ? "Previewing locally — set this to your Netlify site before importing."
+    : "";
+}
+
+function applySite() {
+  const v = document.getElementById("siteUrl").value.trim();
+  if (!v) return;
+  publicOrigin = /^https?:\/\//.test(v) ? v : "https://" + v;
+  publicOrigin = publicOrigin.replace(/\/+$/, "");
+  localStorage.setItem("mockcrm.site", publicOrigin);
+  paintOrigin();
+  buildActions();
+  render();
+}
 
 const ENDPOINTS = [
   ["GET", "/api/v1/lookup?phoneNumber=+966501234001", "Single flat object. Always 200, every field always present, <code>found:false</code> when unknown."],
@@ -213,13 +252,16 @@ fetch(BASE + "/customers").then(r => r.json()).then(rows => {
 // Shape verified against a real Genesys Cloud export: name / integrationType /
 // actionType / config.request / config.response / contract / secure.
 
-const FLAT = {
+let FLAT, ARRAY;
+function buildActions() {
+
+FLAT = {
   name: "CRM_GetCustomerByPhoneNumber",
   integrationType: "custom-rest-actions",
   actionType: "custom",
   config: {
     request: {
-      requestUrlTemplate: BASE + "/lookup?phoneNumber=${input.phoneNumber}",
+      requestUrlTemplate: publicBase() + "/lookup?phoneNumber=${input.phoneNumber}",
       requestType: "GET",
       headers: {},
       requestTemplate: "${input.rawRequest}",
@@ -279,13 +321,13 @@ const FLAT = {
   secure: false,
 };
 
-const ARRAY = {
+ARRAY = {
   name: "CRM_GetCustomerByPhoneNumber_Array",
   integrationType: "custom-rest-actions",
   actionType: "custom",
   config: {
     request: {
-      requestUrlTemplate: BASE + "/customers?phoneNumber=${input.phoneNumber}",
+      requestUrlTemplate: publicBase() + "/customers?phoneNumber=${input.phoneNumber}",
       requestType: "GET",
       headers: {},
       requestTemplate: "${input.rawRequest}",
@@ -315,6 +357,8 @@ const ARRAY = {
   },
   secure: false,
 };
+
+} // buildActions
 
 const HINTS = {
   flat: "Returns one object, so in Architect you bind straight to <code>firstName</code>, " +
@@ -350,6 +394,9 @@ function copyAction() {
     c.textContent = "Copied."; setTimeout(() => (c.textContent = ""), 1800);
   });
 }
+
+paintOrigin();
+buildActions();
 render();
 </script>
 </body>

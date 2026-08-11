@@ -75,6 +75,12 @@ for `412.5`, but "SAR 412.50" comes out right.
 
 ## Wiring it into Genesys Cloud
 
+The console page generates the import JSON against a **Public site URL** field, separate
+from wherever the page is being served. Deployed to Netlify the two match and it fills
+itself in; previewing on localhost it defaults to a placeholder, because Genesys cannot
+reach your laptop — type your Netlify hostname into that field and the JSON updates.
+
+
 1. **Admin → Integrations → Integrations**, add **Web Services Data Actions**, activate it.
 2. **Admin → Integrations → Actions → Import**, upload
    [`genesys/CRM_GetCustomerByPhoneNumber.custom.json`](genesys/CRM_GetCustomerByPhoneNumber.custom.json)
