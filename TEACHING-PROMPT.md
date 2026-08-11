@@ -50,11 +50,19 @@ Finish by giving me:
 1. A single .zip whose ROOT contains index.html, netlify.toml and netlify/ — use
    forward slashes inside the zip, because Netlify's unzip mishandles backslashes
    and then never finds the function.
-2. The Genesys data action import JSON, in exactly this shape:
+2. The Genesys data action import JSON, named CRM_GetCustomerByPhoneNumber, in
+   exactly this shape:
    {name, integrationType:"custom-rest-actions", actionType:"custom",
     config:{request:{requestUrlTemplate, requestType, headers, requestTemplate},
             response:{translationMap, translationMapDefaults, successTemplate}},
     contract:{input:{inputSchema}, output:{successSchema}}, secure:false}
+3. A field-by-field build sheet for creating that same action BY HAND in the
+   Genesys UI, because I am teaching this and importing a file teaches nothing.
+   One copy-paste block per field, each labelled with where it lives in the UI:
+   action name, Input contract (bare JSON schema, draft-04, no wrapper), Output
+   contract, Request URL Template, Request Type, Request Body Template, Headers,
+   Translation Map, Translation Map Defaults, Success Template.
+   Put the same build sheet in the console page with a copy button per field.
 
 Ask me whatever you need before you start.
 ```
@@ -108,16 +116,146 @@ is the actual lesson of the session.
 **Admin → Integrations → Integrations → + Integration** → **Web Services Data Actions**
 → install → **Activate**. It needs no credentials for a public endpoint like this.
 
-### Import the action
+### Create the action — two routes
 
-1. Back on the deployed site, download the data action JSON from the console page — it
-   bakes in the real hostname, so nothing needs hand-editing.
+The console page on the deployed site generates both, with your real hostname already
+substituted. **Import file** is 30 seconds. **Build by hand** is the one that teaches.
+Do the second in the room; keep the first in your back pocket if you run short on time.
+
+#### Route A — import the file (fast)
+
+1. On the deployed site, **Genesys Cloud Web data action → Import file — flat object →
+   Download JSON**.
 2. **Admin → Integrations → Actions → Import**, choose the file, select the Web Services
-   integration you just activated, **Import Action**.
-3. Open the action → **Test** tab → `phoneNumber` = `+966501234001` → **Run Action**.
-   You should see the caller's name come back.
-4. **Save**, then **Publish**. An unpublished action is invisible to Architect — this is
-   the single most common "why can't I find my action" moment in the room.
+   integration, **Import Action**.
+
+#### Route B — build it by hand (the teaching route)
+
+On the deployed site pick **Build by hand — field by field**. Every block below has its
+own Copy button there, with your hostname already in it. Replace `<your-site>` if you
+are working from this page instead.
+
+**1. Create it** — **Admin → Integrations → Actions → Add Action**. Pick your Web
+Services Data Actions integration and name it:
+
+```text
+CRM_GetCustomerByPhoneNumber
+```
+
+**2. Input contract** — **Setup → Contracts → Input**. Flip the editor from **Simple** to
+**JSON** and paste. It is a bare JSON schema; there is no wrapper object.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "properties": {
+    "phoneNumber": { "type": "string" }
+  },
+  "required": ["phoneNumber"]
+}
+```
+
+**3. Output contract** — **Setup → Contracts → Output**, same JSON toggle.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "customer",
+  "type": "object",
+  "properties": {
+    "found":          { "type": "boolean" },
+    "phoneNumber":    { "type": "string" },
+    "firstName":      { "type": "string" },
+    "accountNumber":  { "type": "string" },
+    "billAmount":     { "type": "number" },
+    "billAmountText": { "type": "string" },
+    "deviceType":     { "type": "string" }
+  }
+}
+```
+
+> **Stop here and make the point.** Every field in this contract must be present in the
+> response at runtime or the action fails — and the error you get back does not name the
+> missing field. That is the whole reason the API returns all seven even for a number it
+> has never seen.
+
+**4. Request URL Template** — **Configuration → Request**:
+
+```text
+https://<your-site>.netlify.app/api/v1/lookup?phoneNumber=${input.phoneNumber}
+```
+
+> Must be **HTTPS**. Genesys rejects plain HTTP outright, which is also why it can never
+> call your laptop.
+
+**5. Request Type** — dropdown, not a paste field:
+
+```text
+GET
+```
+
+**6. Request Body Template** — leave the default exactly as it is. GET requests do not
+use a body template:
+
+```text
+${input.rawRequest}
+```
+
+**7. Headers** — add nothing. The endpoint is public and takes no auth.
+
+**8. Translation Map** — **Configuration → Response**. JSONPath per field, pulling values
+out of the raw response and naming them for the template below:
+
+```json
+{
+  "foundValue":          "$.found",
+  "phoneNumberValue":    "$.phoneNumber",
+  "firstNameValue":      "$.firstName",
+  "accountNumberValue":  "$.accountNumber",
+  "billAmountValue":     "$.billAmount",
+  "billAmountTextValue": "$.billAmountText",
+  "deviceTypeValue":     "$.deviceType"
+}
+```
+
+**9. Translation Map Defaults** — used when a JSONPath does not resolve. String defaults
+need their quotes escaped, which is why they look doubled:
+
+```json
+{
+  "foundValue":          "false",
+  "phoneNumberValue":    "\"\"",
+  "firstNameValue":      "\"\"",
+  "accountNumberValue":  "\"\"",
+  "billAmountValue":     "0",
+  "billAmountTextValue": "\"\"",
+  "deviceTypeValue":     "\"\""
+}
+```
+
+**10. Success Template** — Velocity. Assembles the translation map values into the object
+the output contract promised:
+
+```text
+{
+  "found": ${foundValue},
+  "phoneNumber": ${phoneNumberValue},
+  "firstName": ${firstNameValue},
+  "accountNumber": ${accountNumberValue},
+  "billAmount": ${billAmountValue},
+  "billAmountText": ${billAmountTextValue},
+  "deviceType": ${deviceTypeValue}
+}
+```
+
+### Test, save, publish — in that order
+
+1. **Test** tab → `phoneNumber` = `+966501234001` → **Run Action**. Ahmed comes back.
+2. Run it again with `+15550001111`. You get `found: false` and empty strings, **not** an
+   error. Show the room this deliberately.
+3. **Save**, then **Publish**. An unpublished action is invisible to Architect — the
+   single most common "why can't I find my action" moment in any session.
 
 ### Use it in a flow
 

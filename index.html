@@ -77,6 +77,19 @@
   .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
   .tabs button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
   .hint { font-size: 13px; color: var(--muted); margin-top: 12px; }
+
+  /* build-by-hand steps */
+  .step { border-top: 1px solid var(--line); padding: 18px 0 4px; }
+  .step:first-child { border-top: 0; padding-top: 4px; }
+  .step-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .step-n { font-family: var(--mono); font-size: 12px; font-weight: 700; color: #fff;
+            background: var(--accent); border-radius: 6px; padding: 2px 8px; }
+  .step-field { font-weight: 600; font-size: 15px; }
+  .step-where { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  .step p { margin: 0 0 10px; font-size: 13px; color: var(--muted); max-width: 72ch; }
+  .step .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .step pre { max-height: 320px; }
+  .ok { color: var(--green); font-size: 12px; }
   code { font-family: var(--mono); background: var(--bg); border: 1px solid var(--line);
          border-radius: 5px; padding: 1px 5px; font-size: .92em; }
   a { color: var(--accent); }
@@ -147,15 +160,17 @@
       <span id="siteNote" style="font-size:13px;color:var(--amber)"></span>
     </div>
     <div class="tabs">
-      <button class="on" onclick="showAction('flat', this)">Flat object — recommended</button>
-      <button onclick="showAction('array', this)">Array — matches your mockapi action</button>
+      <button class="on" onclick="showAction('flat', this)">Import file — flat object</button>
+      <button onclick="showAction('array', this)">Import file — array</button>
+      <button onclick="showAction('manual', this)">Build by hand — field by field</button>
     </div>
-    <div class="row">
+    <div class="row" id="fileRow">
       <button class="primary" onclick="dl()">Download JSON</button>
       <button onclick="copyAction()">Copy to clipboard</button>
       <span id="copied" style="color:var(--green);font-size:13px"></span>
     </div>
     <pre id="action"></pre>
+    <div id="manual"></div>
     <p class="hint" id="actionHint"></p>
   </div>
 
@@ -368,12 +383,99 @@ const HINTS = {
   array: "Same call pattern as your existing mockapi.io action — an array with one entry, or empty when " +
          "the number is unknown. In Architect you index <code>[0]</code> and must check the collection " +
          "count first, which is the extra step the flat version removes.",
+  manual: "Builds the same action as the flat import file, one field at a time. Slower, but the room " +
+          "sees where each piece lives — and it is the only way to teach what the translation map " +
+          "actually does.",
 };
 
+/* ------------------------------------------------- build-by-hand steps -- */
+// Derived from FLAT so the two paths can never drift apart.
+
+function steps() {
+  const req = FLAT.config.request, res = FLAT.config.response;
+  const draft = "http://json-schema.org/draft-04/schema#";
+  return [
+    { field: "Action name", where: "Actions → Add Action",
+      body: FLAT.name,
+      note: "Add Action, give it this name, and pick your Web Services Data Actions integration." },
+
+    { field: "Input contract", where: "Setup → Contracts → Input → JSON",
+      body: JSON.stringify({ $schema: draft, ...FLAT.contract.input.inputSchema }, null, 2),
+      note: "Switch the editor from Simple to JSON and paste this. It is a bare JSON schema — no wrapper object." },
+
+    { field: "Output contract", where: "Setup → Contracts → Output → JSON",
+      body: JSON.stringify({ $schema: draft, ...FLAT.contract.output.successSchema }, null, 2),
+      note: "Every field here must exist in the response at runtime or the action fails — which is why the API always returns all of them, even for an unknown number." },
+
+    { field: "Request URL Template", where: "Configuration → Request",
+      body: req.requestUrlTemplate,
+      note: "Must be HTTPS — Genesys rejects plain HTTP, and it cannot reach localhost. ${input.phoneNumber} is substituted at call time." },
+
+    { field: "Request Type", where: "Configuration → Request",
+      body: req.requestType,
+      note: "A dropdown, not a paste field." },
+
+    { field: "Request Body Template", where: "Configuration → Request",
+      body: req.requestTemplate,
+      note: "GET requests do not use a body template; leave the default exactly as it is." },
+
+    { field: "Headers", where: "Configuration → Request",
+      body: "(none)",
+      note: "The endpoint is public and takes no auth, so add nothing here." },
+
+    { field: "Translation Map", where: "Configuration → Response",
+      body: JSON.stringify(res.translationMap, null, 2),
+      note: "JSONPath per field, pulling values out of the raw response and naming them for the success template." },
+
+    { field: "Translation Map Defaults", where: "Configuration → Response",
+      body: JSON.stringify(res.translationMapDefaults, null, 2),
+      note: "Used when a JSONPath does not resolve. Strings need their quotes escaped — that is why the values look doubled." },
+
+    { field: "Success Template", where: "Configuration → Response",
+      body: res.successTemplate,
+      note: "Velocity. Assembles the translation map values into the object the output contract promises." },
+
+    { field: "Test, Save, Publish", where: "Test tab",
+      body: "+966501234001",
+      note: "Run the action with this number and you should get Ahmed back. Then Save, then Publish — an unpublished action is invisible to Architect." },
+  ];
+}
+
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+function renderManual() {
+  document.getElementById("manual").innerHTML = steps().map((s, i) => `
+    <div class="step">
+      <div class="step-head">
+        <span class="step-n">${i + 1}</span>
+        <span class="step-field">${s.field}</span>
+        <span class="step-where">${esc(s.where)}</span>
+      </div>
+      <p>${esc(s.note)}</p>
+      <div class="bar">
+        <button onclick="copyStep(${i}, this)">Copy</button>
+        <span class="ok" id="ok${i}"></span>
+      </div>
+      <pre id="step${i}">${esc(s.body)}</pre>
+    </div>`).join("");
+}
+
+function copyStep(i, btn) {
+  navigator.clipboard.writeText(steps()[i].body).then(() => {
+    const el = document.getElementById("ok" + i);
+    el.textContent = "Copied."; setTimeout(() => (el.textContent = ""), 1600);
+  });
+}
+
 let current = "flat";
-function actionJson() { return JSON.stringify(current === "flat" ? FLAT : ARRAY, null, 2); }
+function actionJson() { return JSON.stringify(current === "array" ? ARRAY : FLAT, null, 2); }
 function render() {
-  document.getElementById("action").textContent = actionJson();
+  const manual = current === "manual";
+  document.getElementById("fileRow").style.display = manual ? "none" : "flex";
+  document.getElementById("action").style.display = manual ? "none" : "block";
+  document.getElementById("manual").style.display = manual ? "block" : "none";
+  if (manual) renderManual();
+  else document.getElementById("action").textContent = actionJson();
   document.getElementById("actionHint").innerHTML = HINTS[current];
 }
 function showAction(which, btn) {
