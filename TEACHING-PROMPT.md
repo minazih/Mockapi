@@ -28,6 +28,12 @@ Open a **new Claude Code session in an empty folder** and paste this:
 Build me a mock REST API that I can deploy to Netlify by hand and then call from
 Genesys Cloud as a web services data action.
 
+Before you write any code, ask me for my Netlify site URL. The endpoint and the data
+action's requestUrlTemplate have to be built against my real hostname over HTTPS —
+Genesys rejects plain HTTP and cannot reach localhost, and a placeholder gets imported
+unnoticed and fails at runtime. If I have not created the site yet, use
+https://your-site.netlify.app and end by reminding me to set the real one.
+
 Constraints:
 - A static index.html plus ONE Netlify Function. No framework, no build step, no npm
   install, no git repo, and do not push anything anywhere.
@@ -81,7 +87,7 @@ column; give them fast and keep the room moving.
 | 5 | Single flat object, or an array like mockapi.io returns? | Flat object. Say why: an array forces Architect to check the collection count and index `[0]` before it can touch anything |
 | 6 | Brand / naming for the data and the site? | Anything neutral and fictional. Never real customer data — this ends up on a public URL |
 | 7 | Read-only, or writes too (create a case, take a payment)? | Read-only for the first pass |
-| 8 | What should the Netlify site be called? | It won't know yet — you name it in phase 3, then regenerate the data action JSON |
+| 8 | **What is your Netlify site URL?** (asked first, before any code) | `https://<your-site>.netlify.app`. On a live build you won't have it yet — say so, let it use the placeholder, then come back in phase 3 and regenerate the data action JSON. Worth narrating: this is the field that decides whether the action works at all |
 
 **If it doesn't ask, prompt it to.** "What do you need to know before you start?" A model
 that guesses the schema builds the wrong thing quickly.

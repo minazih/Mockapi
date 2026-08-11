@@ -14,6 +14,19 @@ Build me a mock REST API that I will deploy to Netlify by hand and then call fro
 Genesys Cloud as a Web Services Data Action. I am using it to demo an IVR that greets
 a caller by name and reads their balance back to them.
 
+## Ask me this before you write any code
+
+What is my Netlify site URL — the https://<something>.netlify.app address the site will
+live at? Everything else you need is specified below, but the endpoint and the data
+action's requestUrlTemplate have to be built against my real hostname. A placeholder
+gets imported into Genesys unnoticed and then fails at runtime with an error that does
+not mention the URL.
+
+If I tell you I have not created the site yet: use https://your-site.netlify.app, carry
+on, and end your final answer by reminding me to set the real hostname and regenerate
+the data action JSON once I have deployed. Netlify assigns a random name on first
+deploy, so I may need to rename the site before I can answer you.
+
 ## What to build
 
 A static index.html plus ONE Netlify Function. No framework, no build step, no npm
@@ -94,8 +107,10 @@ should work in light and dark mode. It needs:
 - A "Public site URL" field, separate from where the page is being served. The page's
   own test calls always use location.origin so they work anywhere, but the generated
   data action must target this public URL — Genesys cannot reach localhost, and
-  requestUrlTemplate must be HTTPS. Default it to location.origin when deployed, and to
-  a placeholder when the hostname is localhost. Persist it in localStorage.
+  requestUrlTemplate must be HTTPS. When deployed it is location.origin; when the
+  hostname is localhost, fall back to the Netlify URL I gave you, held in a single named
+  constant at the top of the script so I can change it in one place. Persist any edit in
+  localStorage, and accept a bare hostname by prepending https://.
 - Three tabs for the data action, all regenerated when that URL changes:
     a) Import file, flat object — with a Download JSON button
     b) Import file, array variant
@@ -126,6 +141,10 @@ Named CRM_GetCustomerByPhoneNumber, in exactly this shape:
   },
   "secure": false
 }
+
+requestUrlTemplate must point at the Netlify site URL I gave you, over HTTPS —
+https://<my-site>.netlify.app/api/v1/lookup?phoneNumber=${input.phoneNumber}. Genesys
+rejects plain HTTP outright.
 
 requestType GET, requestTemplate "${input.rawRequest}", headers empty. Use an explicit
 translationMap with JSONPath per field and translationMapDefaults for every one of them,
@@ -164,11 +183,12 @@ you start?"* A model that guesses the schema builds the wrong thing quickly.
 
 | Question | Answer |
 |---|---|
+| **What is your Netlify site URL?** | `https://<your-site>.netlify.app`. If the site doesn't exist yet, say so — it should default to a placeholder and remind you to regenerate the data action JSON after deploying |
 | What is the lookup key? | Phone number |
 | Which fields come back, and what type is each? | `firstName` string, `accountNumber` string, `billAmount` number, `deviceType` string — plus `id` and `phoneNumber` |
 | How many records, and which scenarios? | 12. Several zero-balance, one large overdue, mixed handsets and one router, and one number deliberately absent |
 | Region, number format, currency? | Saudi, `+9665012340NN`, SAR |
 | Flat object or an array like mockapi.io? | Both — flat for Genesys, array for compatibility with actions already built against mockapi.io |
 | Read-only, or writes too? | Read-only |
-| What is the Netlify site called? | Unknown at build time — that is what the Public site URL field is for |
+| (asked up front, see above) | — |
 | Real or invented data? | Invented, always. It lands on a public URL |
