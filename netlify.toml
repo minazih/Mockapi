@@ -1,0 +1,31 @@
+# Mock CRM API — Netlify configuration.
+# Works both for a Git-connected deploy and for a drag-and-drop folder upload.
+
+[build]
+  # index.html (the API console) sits at the repo root.
+  publish = "."
+  functions = "netlify/functions"
+
+# Everything under /api/v1/ is served by the single `api` function.
+# :splat carries the rest of the path through, so the function sees
+# /.netlify/functions/api/customers and strips the prefix itself.
+[[redirects]]
+  from = "/api/v1/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+# Mock data only, but there is no reason to serve it with the brakes off.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+
+# The whole point is that Genesys Cloud (and a browser console) can call this
+# from anywhere, so CORS is wide open and nothing is cached.
+[[headers]]
+  for = "/api/v1/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "no-store"

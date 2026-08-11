@@ -1,0 +1,79 @@
+{
+  "name": "CRM_GetCustomerByPhoneNumber",
+  "integrationType": "custom-rest-actions",
+  "actionType": "custom",
+  "config": {
+    "request": {
+      "requestUrlTemplate": "https://YOUR-SITE.netlify.app/api/v1/lookup?phoneNumber=${input.phoneNumber}",
+      "requestType": "GET",
+      "headers": {},
+      "requestTemplate": "${input.rawRequest}"
+    },
+    "response": {
+      "translationMap": {
+        "foundValue": "$.found",
+        "phoneNumberValue": "$.phoneNumber",
+        "firstNameValue": "$.firstName",
+        "accountNumberValue": "$.accountNumber",
+        "billAmountValue": "$.billAmount",
+        "billAmountTextValue": "$.billAmountText",
+        "deviceTypeValue": "$.deviceType"
+      },
+      "translationMapDefaults": {
+        "foundValue": "false",
+        "phoneNumberValue": "\"\"",
+        "firstNameValue": "\"\"",
+        "accountNumberValue": "\"\"",
+        "billAmountValue": "0",
+        "billAmountTextValue": "\"\"",
+        "deviceTypeValue": "\"\""
+      },
+      "successTemplate": "{\n  \"found\": ${foundValue},\n  \"phoneNumber\": ${phoneNumberValue},\n  \"firstName\": ${firstNameValue},\n  \"accountNumber\": ${accountNumberValue},\n  \"billAmount\": ${billAmountValue},\n  \"billAmountText\": ${billAmountTextValue},\n  \"deviceType\": ${deviceTypeValue}\n}"
+    }
+  },
+  "contract": {
+    "input": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "phoneNumber": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "phoneNumber"
+        ]
+      }
+    },
+    "output": {
+      "successSchema": {
+        "title": "customer",
+        "type": "object",
+        "properties": {
+          "found": {
+            "type": "boolean"
+          },
+          "phoneNumber": {
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "accountNumber": {
+            "type": "string"
+          },
+          "billAmount": {
+            "type": "number"
+          },
+          "billAmountText": {
+            "type": "string"
+          },
+          "deviceType": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "secure": false
+}

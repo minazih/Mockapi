@@ -1,0 +1,8 @@
+node_modules/
+.netlify/
+# Built on demand — a committed copy goes stale silently and gets deployed anyway.
+*.zip
+.env
+.env.*
+.DS_Store
+Thumbs.db

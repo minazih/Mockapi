@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock CRM API — Genesys Cloud data action backend</title>
+<style>
+  :root {
+    --bg: #f7f8fb; --grid: #e8ebf2; --card: #ffffff; --ink: #101322; --muted: #666e85;
+    --line: #e3e7f0; --accent: #3b6ef5; --accent-soft: #e5edff;
+    --purple: #7b5cf0; --purple-soft: #eee9ff; --amber: #b96a00; --amber-soft: #fdefdc;
+    --green: #0f8a5f; --green-soft: #e2f5ee; --red: #c0392b; --red-soft: #fdeae7;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1017; --grid: #191d28; --card: #151925; --ink: #eef1f8; --muted: #98a1b8;
+      --line: #262c3b; --accent: #6b93ff; --accent-soft: #1b2540;
+      --purple: #a68cff; --purple-soft: #241f3d; --amber: #e0a250; --amber-soft: #33270f;
+      --green: #4cc79a; --green-soft: #10312a; --red: #ff8a7a; --red-soft: #3a1d1a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: var(--sans); color: var(--ink); background: var(--bg);
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px),
+                      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 168px 140px; line-height: 1.5;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 20px 80px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+    padding: 26px 28px; margin-bottom: 22px; box-shadow: 0 1px 3px rgba(16,19,34,.05);
+  }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -.3px; }
+  h2 { font-size: 15px; margin: 0 0 14px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+  p.lede { margin: 0 0 20px; color: var(--muted); max-width: 68ch; }
+
+  /* the mockapi.io-style endpoint bar */
+  .endpoint { font-family: var(--mono); font-size: 17px; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+  .endpoint .scheme { color: var(--accent); }
+  .endpoint .host { background: var(--accent-soft); color: var(--accent); border-radius: 8px; padding: 3px 9px; font-weight: 700; }
+  .endpoint .base { background: var(--purple-soft); color: var(--purple); border-radius: 8px; padding: 3px 9px; font-weight: 700; }
+  .endpoint .res  { background: var(--amber-soft); color: var(--amber); border-radius: 8px; padding: 3px 9px; font-weight: 700; }
+  .endpoint .sep { color: var(--muted); padding: 0 2px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .7px; color: var(--muted); font-weight: 600; }
+  td.mono, .mono { font-family: var(--mono); }
+  .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  .verb { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 5px;
+          background: var(--green-soft); color: var(--green); }
+
+  button {
+    font: 600 14px var(--sans); border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    border-radius: 10px; padding: 9px 16px; cursor: pointer; transition: .12s;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { filter: brightness(1.08); color: #fff; }
+  select, input[type=text] {
+    font: 14px var(--mono); padding: 9px 12px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink); min-width: 220px;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+
+  pre {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 16px;
+    font-family: var(--mono); font-size: 13px; overflow-x: auto; margin: 0; max-height: 460px;
+  }
+  .status { font-family: var(--mono); font-size: 12px; padding: 3px 9px; border-radius: 6px; }
+  .status.ok { background: var(--green-soft); color: var(--green); }
+  .status.bad { background: var(--red-soft); color: var(--red); }
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tabs button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .hint { font-size: 13px; color: var(--muted); margin-top: 12px; }
+  code { font-family: var(--mono); background: var(--bg); border: 1px solid var(--line);
+         border-radius: 5px; padding: 1px 5px; font-size: .92em; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <h1>Mock CRM API</h1>
+    <p class="lede">
+      Fake CRM records for Genesys Cloud IVR and bot demos. Look a caller up by phone number and get
+      back their first name, account number, bill amount and device type. No authentication, CORS wide
+      open, nothing is written or persisted.
+    </p>
+    <div class="endpoint">
+      <span class="scheme">https://</span><span class="host" id="host">—</span><span class="sep">/</span><span class="base">api/v1</span><span class="sep">/</span><span class="res">:endpoint</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Endpoints</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th style="width:60px">Method</th><th>Path</th><th>Returns</th></tr></thead>
+        <tbody id="endpoints"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Try it</h2>
+    <div class="row">
+      <select id="pick"></select>
+      <input type="text" id="phone" value="+966501234001" aria-label="Phone number">
+      <button class="primary" onclick="run('lookup')">GET /lookup</button>
+      <button onclick="run('customers')">GET /customers</button>
+      <span id="meta"></span>
+    </div>
+    <pre id="out">Pick a number and press a button.</pre>
+    <p class="hint">
+      Any format resolves to the same record — <code>+966501234001</code>, <code>00966501234001</code>,
+      <code>0501234001</code> or <code>966 50 123 4001</code>. Matching uses the last 9 digits.
+      Add <code>&amp;delay=1500</code> to test an Architect timeout, or <code>&amp;fail=500</code> to
+      exercise the data action's failure path.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Records <span class="mono" style="color:var(--muted);font-size:13px" id="count"></span></h2>
+    <div class="scroll"><table>
+      <thead><tr><th>id</th><th>phoneNumber</th><th>firstName</th><th>accountNumber</th><th>billAmount</th><th>deviceType</th></tr></thead>
+      <tbody id="records"><tr><td colspan="6" style="color:var(--muted)">Loading…</td></tr></tbody>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <h2>Genesys Cloud data action</h2>
+    <p class="lede" style="margin-bottom:16px">
+      Generated against <strong id="origin2" class="mono"></strong>. Download it, then in Genesys Cloud go to
+      <strong>Admin → Integrations → Actions → Import</strong>, pick the file and select your
+      <em>Web Services Data Actions</em> integration.
+    </p>
+    <div class="tabs">
+      <button class="on" onclick="showAction('flat', this)">Flat object — recommended</button>
+      <button onclick="showAction('array', this)">Array — matches your mockapi action</button>
+    </div>
+    <div class="row">
+      <button class="primary" onclick="dl()">Download JSON</button>
+      <button onclick="copyAction()">Copy to clipboard</button>
+      <span id="copied" style="color:var(--green);font-size:13px"></span>
+    </div>
+    <pre id="action"></pre>
+    <p class="hint" id="actionHint"></p>
+  </div>
+
+</div>
+
+<script>
+const ORIGIN = location.origin;
+const BASE = ORIGIN + "/api/v1";
+document.getElementById("host").textContent = location.host;
+document.getElementById("origin2").textContent = ORIGIN;
+
+const ENDPOINTS = [
+  ["GET", "/api/v1/lookup?phoneNumber=+966501234001", "Single flat object. Always 200, every field always present, <code>found:false</code> when unknown."],
+  ["GET", "/api/v1/customers?phoneNumber=+966501234001", "Array with 0 or 1 records — mockapi.io-compatible."],
+  ["GET", "/api/v1/customers", "All records. <code>?limit=</code> to trim."],
+  ["GET", "/api/v1/customers/:id", "One record by id."],
+  ["GET", "/api/v1/health", "Liveness probe."],
+];
+document.getElementById("endpoints").innerHTML = ENDPOINTS.map(([m, p, d]) =>
+  `<tr><td><span class="verb">${m}</span></td><td class="mono">${p.replace(/&/g,"&amp;").replace(/</g,"&lt;")}</td><td>${d}</td></tr>`).join("");
+
+/* ---------------------------------------------------------------- try it -- */
+
+async function run(kind) {
+  const phone = document.getElementById("phone").value.trim();
+  const url = `${BASE}/${kind}?phoneNumber=${encodeURIComponent(phone)}`;
+  const out = document.getElementById("out"), meta = document.getElementById("meta");
+  out.textContent = "…";
+  const t0 = performance.now();
+  try {
+    const r = await fetch(url);
+    const body = await r.json();
+    const ms = Math.round(performance.now() - t0);
+    meta.innerHTML = `<span class="status ${r.ok ? "ok" : "bad"}">${r.status} · ${ms}ms</span>`;
+    out.textContent = `GET ${url}\n\n` + JSON.stringify(body, null, 2);
+  } catch (e) {
+    meta.innerHTML = `<span class="status bad">failed</span>`;
+    out.textContent = String(e);
+  }
+}
+
+/* --------------------------------------------------------------- records -- */
+
+fetch(BASE + "/customers").then(r => r.json()).then(rows => {
+  document.getElementById("count").textContent = `(${rows.length})`;
+  document.getElementById("records").innerHTML = rows.map(c => `<tr>
+    <td class="mono">${c.id}</td><td class="mono">${c.phoneNumber}</td><td>${c.firstName}</td>
+    <td class="mono">${c.accountNumber}</td><td class="mono">${c.billAmount.toFixed(2)}</td>
+    <td>${c.deviceType}</td></tr>`).join("");
+  const pick = document.getElementById("pick");
+  pick.innerHTML = rows.map(c => `<option value="${c.phoneNumber}">${c.phoneNumber} — ${c.firstName}</option>`).join("")
+                 + `<option value="+15550001111">+15550001111 — unknown caller</option>`;
+  pick.onchange = () => { document.getElementById("phone").value = pick.value; };
+}).catch(() => {
+  document.getElementById("records").innerHTML =
+    `<tr><td colspan="6" style="color:var(--red)">Could not reach the API. If you opened this file
+     directly from disk, serve it through Netlify instead — the function only runs there.</td></tr>`;
+});
+
+/* ------------------------------------------------- data action generation -- */
+// Shape verified against a real Genesys Cloud export: name / integrationType /
+// actionType / config.request / config.response / contract / secure.
+
+const FLAT = {
+  name: "CRM_GetCustomerByPhoneNumber",
+  integrationType: "custom-rest-actions",
+  actionType: "custom",
+  config: {
+    request: {
+      requestUrlTemplate: BASE + "/lookup?phoneNumber=${input.phoneNumber}",
+      requestType: "GET",
+      headers: {},
+      requestTemplate: "${input.rawRequest}",
+    },
+    response: {
+      // Explicit rather than a ${rawResult} pass-through: a translation map
+      // with defaults cannot be broken by a field the API stops sending.
+      translationMap: {
+        foundValue: "$.found",
+        phoneNumberValue: "$.phoneNumber",
+        firstNameValue: "$.firstName",
+        accountNumberValue: "$.accountNumber",
+        billAmountValue: "$.billAmount",
+        billAmountTextValue: "$.billAmountText",
+        deviceTypeValue: "$.deviceType",
+      },
+      translationMapDefaults: {
+        foundValue: "false",
+        phoneNumberValue: "\"\"",
+        firstNameValue: "\"\"",
+        accountNumberValue: "\"\"",
+        billAmountValue: "0",
+        billAmountTextValue: "\"\"",
+        deviceTypeValue: "\"\"",
+      },
+      successTemplate: [
+        "{",
+        '  "found": ${foundValue},',
+        '  "phoneNumber": ${phoneNumberValue},',
+        '  "firstName": ${firstNameValue},',
+        '  "accountNumber": ${accountNumberValue},',
+        '  "billAmount": ${billAmountValue},',
+        '  "billAmountText": ${billAmountTextValue},',
+        '  "deviceType": ${deviceTypeValue}',
+        "}",
+      ].join("\n"),
+    },
+  },
+  contract: {
+    input: { inputSchema: { type: "object", properties: { phoneNumber: { type: "string" } }, required: ["phoneNumber"] } },
+    output: {
+      successSchema: {
+        title: "customer",
+        type: "object",
+        properties: {
+          found: { type: "boolean" },
+          phoneNumber: { type: "string" },
+          firstName: { type: "string" },
+          accountNumber: { type: "string" },
+          billAmount: { type: "number" },
+          billAmountText: { type: "string" },
+          deviceType: { type: "string" },
+        },
+      },
+    },
+  },
+  secure: false,
+};
+
+const ARRAY = {
+  name: "CRM_GetCustomerByPhoneNumber_Array",
+  integrationType: "custom-rest-actions",
+  actionType: "custom",
+  config: {
+    request: {
+      requestUrlTemplate: BASE + "/customers?phoneNumber=${input.phoneNumber}",
+      requestType: "GET",
+      headers: {},
+      requestTemplate: "${input.rawRequest}",
+    },
+    response: { translationMap: {}, translationMapDefaults: {}, successTemplate: "${rawResult}" },
+  },
+  contract: {
+    input: { inputSchema: { type: "object", properties: { phoneNumber: { type: "string" } } } },
+    output: {
+      successSchema: {
+        title: "customers",
+        type: "array",
+        properties: {},
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            phoneNumber: { type: "string" },
+            firstName: { type: "string" },
+            accountNumber: { type: "string" },
+            billAmount: { type: "number" },
+            deviceType: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+  secure: false,
+};
+
+const HINTS = {
+  flat: "Returns one object, so in Architect you bind straight to <code>firstName</code>, " +
+        "<code>billAmount</code> and <code>deviceType</code>. Branch on <code>found</code> for the " +
+        "unknown-caller path. The endpoint always answers 200, so the data action's failure path only " +
+        "fires on a genuine network or platform error.",
+  array: "Same call pattern as your existing mockapi.io action — an array with one entry, or empty when " +
+         "the number is unknown. In Architect you index <code>[0]</code> and must check the collection " +
+         "count first, which is the extra step the flat version removes.",
+};
+
+let current = "flat";
+function actionJson() { return JSON.stringify(current === "flat" ? FLAT : ARRAY, null, 2); }
+function render() {
+  document.getElementById("action").textContent = actionJson();
+  document.getElementById("actionHint").innerHTML = HINTS[current];
+}
+function showAction(which, btn) {
+  current = which;
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("on"));
+  btn.classList.add("on");
+  render();
+}
+function dl() {
+  const name = (current === "flat" ? FLAT.name : ARRAY.name) + ".custom.json";
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([actionJson()], { type: "application/json" }));
+  a.download = name; a.click(); URL.revokeObjectURL(a.href);
+}
+function copyAction() {
+  navigator.clipboard.writeText(actionJson()).then(() => {
+    const c = document.getElementById("copied");
+    c.textContent = "Copied."; setTimeout(() => (c.textContent = ""), 1800);
+  });
+}
+render();
+</script>
+</body>
+</html>

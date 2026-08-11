@@ -1,0 +1,10 @@
+{
+  "name": "mock-crm-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mock CRM API for Genesys Cloud web services data actions — lookup by phone number for IVR and bot flows.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  }
+}

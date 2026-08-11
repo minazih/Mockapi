@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mock-crm-api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["local-server.mjs"],
+      "port": 8888
+    }
+  ]
+}
