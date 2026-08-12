@@ -1,9 +1,14 @@
 # Mockapi — mock CRM API for Genesys Cloud data actions
 
-Repo `minazih/Mockapi` (public). A static console page plus one Netlify Function that
-fakes a CRM: look a caller up by phone number, get back `firstName`, `accountNumber`,
-`billAmount`, `deviceType`. It exists so a Genesys Cloud web services data action has
-something real to call in a demo or a partner enablement session.
+Repo `minazih/Mockapi` (public). A static console page plus one function that fakes a
+CRM: look a caller up by phone number, get back whichever fields you tick. It exists so
+a Genesys Cloud web services data action has something real to call in a demo or a
+partner enablement session.
+
+**Two deploy targets from the one tree**, and they must never fork: Netlify (drag a zip
+on) and AWS (S3 + Lambda + API Gateway, `aws/deploy.ps1`). The function paths stay under
+`netlify/functions/` on both — `aws/` is purely additive glue around the same
+`api.mjs`.
 
 **The repo is public.** Never put real customer data, real account numbers or a real
 operator's branding in `data.mjs`.
@@ -15,7 +20,9 @@ operator's branding in `data.mjs`.
 | `index.html` | The control panel: dataset and field picker, record browser, try-it panel, and a generator that emits the Genesys data action **with the deployed hostname baked in** |
 | `netlify/functions/api.mjs` | The whole API. One function, hand-rolled router |
 | `netlify/functions/lib/data.mjs` | 12 shared people plus four industry payloads |
-| `genesys/*.custom.json` | Reference data action exports, host left as `YOUR-SITE.netlify.app` |
+| `genesys/*.custom.json` | Reference data action exports |
+| `aws/deploy.ps1` | AWS deploy: package, role, Lambda, HTTP API, bucket, upload, smoke test. Idempotent |
+| `aws/lambda/handler.mjs` | Lambda adapter — API Gateway v2 event → Web `Request` |
 | `local-server.mjs` | `node local-server.mjs` → localhost:8888, runs the real function |
 | `PROMPT.md` | Rebuild prompt v1 — interviews you about fields up front |
 | `PROMPT-V2.md` | Rebuild prompt v2 — asks only for the Netlify URL; fields are chosen in the deployed page |
@@ -57,7 +64,7 @@ Companions and the output contract are derived, so there is nothing to change in
 Dates are stored as **day offsets from today**, not ISO strings. It looks odd in the
 dataset and it is why the demo does not expire.
 
-## Deploying
+## Deploying to Netlify
 
 Drag-and-drop is the intended route, and the zip must have the site files at its
 **root** with **forward-slash** paths inside — PowerShell's `Compress-Archive` writes
@@ -65,9 +72,47 @@ backslashes, Netlify's unzip mishandles them, and the function then 404s with no
 error. Build it with `System.IO.Compression.ZipArchive` and `CreateEntry("netlify/functions/api.mjs")`
 explicitly. `*.zip` is gitignored on purpose.
 
-Netlify site name is set by whoever deployed it; the console page reads
-`location.origin`, so the generated data action JSON is always correct for wherever it
-is actually running.
+Netlify site name is set by whoever deployed it; the page and the function share an
+origin there, so `API_ORIGIN` stays `""` and everything resolves to `location.origin`.
+
+Live: `rk-mockapi.netlify.app`.
+
+## Deploying to AWS
+
+```
+powershell -ExecutionPolicy Bypass -File aws/deploy.ps1 -BucketName crm-mockapi -Region eu-west-1
+```
+
+Idempotent — re-run to ship a change. Smoke-tests the deployed lookup at the end rather
+than trusting that a successful upload means a working API.
+
+Live (eu-west-1, account 537124933282): console
+`https://crm-mockapi.s3.eu-west-1.amazonaws.com/crm/index.html`, API
+`https://4s4uwlzwp9.execute-api.eu-west-1.amazonaws.com`. Lambda `crm-mockapi-run`,
+role `crm-mockapi-lambda-role`, HTTP API `crm-mockapi-api`.
+
+### Four AWS traps, all already paid for
+
+1. **Do not swap API Gateway for a Lambda Function URL.** `AuthType NONE` returns **403**
+   in this org — an Organizations guardrail denies anonymous `lambda:InvokeFunctionUrl`,
+   even though public S3 and IAM invoke both work. Same finding as `GenesysCloudPOC-AWS`.
+2. **The Lambda zip needs forward-slash entry paths too.** Otherwise Lambda unpacks a
+   file literally named `lib\data.mjs` and `import './lib/data.mjs'` fails at cold start
+   with an error that never mentions zip encoding.
+3. **The adapter must rebuild the real URL** from `rawPath` + `rawQueryString`. The POC's
+   adapter next door uses a synthetic URL because its backend reads only method and body;
+   this API is driven by path and query. Copy that one verbatim and every lookup returns
+   `found: false` — a 200 with empty fields, invisible until it is on a live call.
+4. **No CORS on the API Gateway.** `api.mjs` sets its own and answers OPTIONS; doing both
+   emits duplicate `access-control-allow-origin` headers and browsers reject that.
+
+### How the page finds the API
+
+On Netlify the two share an origin. On AWS they do not, so `deploy.ps1` rewrites
+`const API_ORIGIN = "";` to the API Gateway endpoint before upload. That constant also
+drives the **data action generator** — Genesys must call API Gateway, never the S3 bucket
+serving the page. The deploy throws if it cannot find the needle, rather than shipping a
+page that quietly points at the bucket.
 
 ## Testing
 

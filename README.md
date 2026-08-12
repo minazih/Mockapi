@@ -136,6 +136,16 @@ directory is picked up from `netlify.toml`.
 **Git:** connect this repo in Netlify. Build command empty, publish directory `.`,
 functions directory `netlify/functions`.
 
+**AWS** (S3 for the page, Lambda behind an API Gateway HTTP API for the function):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File aws/deploy.ps1 -BucketName crm-mockapi -Region eu-west-1
+```
+
+Idempotent, and it smoke-tests the deployed lookup before declaring success. See
+`CLAUDE.md` for the four AWS traps — the short version is that a Lambda Function URL is
+403'd by an org guardrail, and both zips need forward-slash entry paths.
+
 ## Adding fields
 
 Add the key to every record in

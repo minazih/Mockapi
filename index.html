@@ -253,12 +253,17 @@
 //              HTTPS, so when previewing locally we fall back to SITE_URL.
 // Deployed to Netlify the two are the same and none of this is visible.
 
-const SITE_URL = "https://nizar-mockapi.netlify.app"; // ← this site; change if you rename it
-const BASE = location.origin + "/api/v1";
+// API_ORIGIN is empty on Netlify, where the page and the function share an origin.
+// The AWS deploy rewrites it to the API Gateway endpoint, because there the page
+// is served from S3 and the API lives somewhere else entirely.
+const API_ORIGIN = "";
+const SITE_URL = "https://nizar-mockapi.netlify.app"; // ← fallback when previewing locally
+const BASE = (API_ORIGIN || location.origin) + "/api/v1";
 
 const isLocal = /^(localhost|127\.|0\.0\.0\.0|\[?::1)/.test(location.hostname);
 let publicOrigin = (localStorage.getItem("mockcrm.site") || "").trim()
-  || (isLocal ? SITE_URL : location.origin);
+  || API_ORIGIN                              // on AWS, Genesys must call API Gateway,
+  || (isLocal ? SITE_URL : location.origin); // never the S3 bucket that serves this page
 const publicBase = () => publicOrigin.replace(/\/+$/, "") + "/api/v1";
 
 function paintOrigin() {
