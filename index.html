@@ -347,36 +347,67 @@ function renderFields() {
   }).join("");
   document.getElementById("tickCount").textContent = `${chosen().length} of ${allFields().length} fields`;
 }
-function toggle(name, on) { on ? ticked.add(name) : ticked.delete(name); refresh(); }
+function tickCount() {
+  document.getElementById("tickCount").textContent = `${chosen().length} of ${allFields().length} fields`;
+}
+// Update the count and everything downstream, but do NOT re-render the
+// checkboxes — rebuilding markup the user is interacting with throws away
+// their focus. Same reason setField() never touches the custom rows.
+function toggle(name, on) { on ? ticked.add(name) : ticked.delete(name); tickCount(); refreshDerived(); }
 function tickAll(on) {
-  if (on) ticked = new Set(allFields().map(f => f.name));
-  else { ticked = new Set(LOCKED); }
-  refresh();
+  ticked = on ? new Set(allFields().map(f => f.name)) : new Set(LOCKED);
+  renderFields();      // checkbox states changed wholesale, so a rebuild is right here
+  refreshDerived();
 }
 
 /* ----------------------------------------------------------- custom fields -- */
 
+// STRUCTURAL render only — call this when rows are added, removed or the
+// dataset changes. Never on a keystroke: replacing innerHTML destroys the very
+// input being typed into, focus drops to <body>, and every character after the
+// first is silently lost.
 function renderCustom() {
   document.getElementById("customRows").innerHTML = customFields.map((f, i) => `
     <div class="crow">
       <input type="text" class="narrow" value="${esc(f.name)}" placeholder="fieldName"
-             oninput="setField(${i}, 'name', this.value)">
-      <select onchange="setField(${i}, 'type', this.value)" style="min-width:130px">
+             oninput="setField(${i}, 'name', this.value, this)">
+      <select onchange="setField(${i}, 'type', this.value, this)" style="min-width:130px">
         ${["string", "number", "money", "date"].map(t =>
           `<option ${f.type === t ? "selected" : ""}>${t}</option>`).join("")}
       </select>
       <button class="sm" onclick="removeField(${i})">Remove</button>
     </div>`).join("");
-  document.getElementById("snippet").textContent = snippet();
 }
-function setField(i, k, v) {
-  // Genesys property names must start with a letter and hold only letters,
-  // numbers, hyphens or underscores — sanitise rather than fail at import.
-  customFields[i][k] = k === "name" ? v.replace(/[^A-Za-z0-9_-]/g, "") : v;
-  defaultTicks(); refresh();
+
+function setField(i, k, v, el) {
+  if (k === "name") {
+    // Genesys property names must start with a letter and hold only letters,
+    // numbers, hyphens or underscores. Sanitise as they type rather than fail
+    // at import — but only rewrite the box when something was actually
+    // stripped, and put the caret back where the typist expects it.
+    const clean = v.replace(/[^A-Za-z0-9_-]/g, "");
+    if (clean !== v && el) {
+      const caret = Math.max(0, (el.selectionStart || 0) - (v.length - clean.length));
+      el.value = clean;
+      el.setSelectionRange(caret, caret);
+    }
+    customFields[i].name = clean;
+  }
+  else { customFields[i].type = v; }
+  defaultTicks();
+  refreshDerived();
 }
-function addField() { customFields.push({ name: "", type: "string" }); defaultTicks(); refresh(); }
-function removeField(i) { customFields.splice(i, 1); defaultTicks(); refresh(); }
+
+function addField() {
+  customFields.push({ name: "", type: "string" });
+  defaultTicks(); renderCustom(); refreshDerived();
+  const rows = document.querySelectorAll("#customRows input[type=text]");
+  if (rows.length) rows[rows.length - 1].focus();
+}
+function removeField(i) {
+  customFields.splice(i, 1);
+  defaultTicks(); renderCustom(); refreshDerived();
+}
 
 // A paste-ready dataset for data.mjs. Placeholder values by type; dates are day
 // offsets from today, which is how the server keeps a demo from going stale.
@@ -636,12 +667,21 @@ function dl() {
 
 /* ------------------------------------------------------------------- boot -- */
 
+// Everything downstream of the model. Safe on every keystroke, because it only
+// writes to elements the user cannot have focus in.
+function refreshDerived() {
+  if (isCustom()) document.getElementById("snippet").textContent = snippet();
+  else tickCount();
+  buildActions();
+  renderAction();
+}
+
+// Full structural rebuild — dataset switch, or first load.
 function refresh() {
   document.getElementById("pickWrap").style.display = isCustom() ? "none" : "block";
   document.getElementById("customWrap").style.display = isCustom() ? "block" : "none";
   if (isCustom()) renderCustom(); else renderFields();
-  buildActions();
-  renderAction();
+  refreshDerived();
 }
 
 function onIndustryChange() {
