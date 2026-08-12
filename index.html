@@ -257,7 +257,7 @@
 // The AWS deploy rewrites it to the API Gateway endpoint, because there the page
 // is served from S3 and the API lives somewhere else entirely.
 const API_ORIGIN = "";
-const SITE_URL = "https://nizar-mockapi.netlify.app"; // ← fallback when previewing locally
+const SITE_URL = "https://your-site.netlify.app"; // ← fallback when previewing locally
 const BASE = (API_ORIGIN || location.origin) + "/api/v1";
 
 const isLocal = /^(localhost|127\.|0\.0\.0\.0|\[?::1)/.test(location.hostname);

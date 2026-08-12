@@ -4,7 +4,7 @@ A mockapi.io-style fake backend, hosted on Netlify, for Genesys Cloud **web serv
 data actions**. Look a caller up by phone number in an IVR or bot flow and get back
 their name and whichever account fields you pick.
 
-**Live:** <https://nizar-mockapi.netlify.app> — the root page is the control panel. Choose a
+**Live:** wherever you deploy it — the root page is the control panel. Choose a
 dataset, tick the fields you want returned, fire test calls, and download a
 ready-to-import Genesys data action with your hostname already baked in.
 

@@ -80,16 +80,33 @@ Live: `rk-mockapi.netlify.app`.
 ## Deploying to AWS
 
 ```
-powershell -ExecutionPolicy Bypass -File aws/deploy.ps1 -BucketName crm-mockapi -Region eu-west-1
+powershell -ExecutionPolicy Bypass -File aws/deploy.ps1 -BucketName <bucket> -Region eu-west-1 -KeyPrefix <prefix>
 ```
 
 Idempotent — re-run to ship a change. Smoke-tests the deployed lookup at the end rather
-than trusting that a successful upload means a working API.
+than trusting that a successful upload means a working API. It prints the console and
+API URLs when it finishes.
 
-Live (eu-west-1, account 537124933282): console
-`https://crm-mockapi.s3.eu-west-1.amazonaws.com/crm/index.html`, API
-`https://4s4uwlzwp9.execute-api.eu-west-1.amazonaws.com`. Lambda `crm-mockapi-run`,
-role `crm-mockapi-lambda-role`, HTTP API `crm-mockapi-api`.
+Resource names, if you need to find them: Lambda `crm-mockapi-run`, role
+`crm-mockapi-lambda-role`, HTTP API `crm-mockapi-api`, region eu-west-1.
+
+**This repo is public, so live URLs and the account ID are deliberately not recorded
+here.** Get them from the deploy output, or:
+
+```
+aws apigatewayv2 get-apis --region eu-west-1 --query "Items[?Name=='crm-mockapi-api'].ApiEndpoint"
+```
+
+### Rate limiting
+
+The API is public and unauthenticated, so the `$default` stage is throttled to **20
+req/sec, 40 burst**. Without it the stage inherits the account default of ~10,000
+req/sec, and since Lambda and API Gateway both bill per request, a scraper finding the
+URL is an unbounded cost. Re-apply after any stage recreation:
+
+```
+aws apigatewayv2 update-stage --api-id <id> --stage-name '$default' --region eu-west-1 --default-route-settings ThrottlingRateLimit=20,ThrottlingBurstLimit=40
+```
 
 ### Four AWS traps, all already paid for
 

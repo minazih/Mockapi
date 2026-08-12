@@ -1,4 +1,4 @@
-<#
+﻿<#
   deploy.ps1 - Deploy the Mock CRM API to AWS (S3 static console + Lambda API)
 
   Mirrors the deployment used by GenesysCloudPOC-AWS in this same account:
@@ -209,13 +209,37 @@ if ($null -eq $head) {
       --create-bucket-configuration ("LocationConstraint=$Region") | Out-Null
   }
 }
-Info "Opening public read access"
-Aws s3api put-public-access-block --bucket $BucketName `
-  --public-access-block-configuration "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false" | Out-Null
-$policy = New-JsonArg ('{"Version":"2012-10-17","Statement":[{"Sid":"PublicRead","Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::' + $BucketName + '/*"}]}')
-Aws s3api put-bucket-policy --bucket $BucketName --policy $policy.Uri | Out-Null
-Remove-Item $policy.Path -Force
-Ok "Bucket ready"
+# This bucket may be shared with other projects - genesys-mea-sco also hosts the
+# Arena POC. put-bucket-policy REPLACES the whole policy document, so writing one
+# unconditionally would silently drop any other statement on the bucket. Only
+# write when there is nothing there, and refuse (rather than clobber) a policy
+# that does not already grant public read.
+Info "Checking public read access"
+$existingPolicy = Aws s3api get-bucket-policy --bucket $BucketName --query Policy --output text -AllowFail
+$publicReadArn = "arn:aws:s3:::$BucketName/*"
+if ($null -eq $existingPolicy) {
+  Info "No bucket policy - adding public read"
+  Aws s3api put-public-access-block --bucket $BucketName `
+    --public-access-block-configuration "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false" | Out-Null
+  $policy = New-JsonArg ('{"Version":"2012-10-17","Statement":[{"Sid":"PublicRead","Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"' + $publicReadArn + '"}]}')
+  Aws s3api put-bucket-policy --bucket $BucketName --policy $policy.Uri | Out-Null
+  Remove-Item $policy.Path -Force
+  Ok "Public read added"
+}
+else {
+  $doc = ($existingPolicy -join '') | ConvertFrom-Json
+  $grants = $doc.Statement | Where-Object {
+    $_.Effect -eq 'Allow' -and
+    ($_.Principal -eq '*' -or $_.Principal.AWS -eq '*') -and
+    ($_.Action -contains 's3:GetObject' -or $_.Action -eq 's3:GetObject') -and
+    ($_.Resource -contains $publicReadArn -or $_.Resource -eq $publicReadArn)
+  }
+  if ($grants) { Ok "Existing policy already grants public read - left untouched" }
+  else {
+    throw "Bucket '$BucketName' has a policy that does NOT grant public s3:GetObject on $publicReadArn. " +
+          "Refusing to overwrite it - add a PublicRead statement by hand, or deploy to a different bucket."
+  }
+}
 
 # ---- 6. upload the page with API_ORIGIN rewritten ---------------------------
 Step "Uploading the console (API_ORIGIN -> API Gateway)"
