@@ -54,6 +54,22 @@ output-contract fields — money fields carry a `Text` companion, dates a `Spoke
 The page renders entirely from that, so it never hardcodes a schema. Adding an industry
 to `data.mjs` makes it appear in the dropdown with no page change.
 
+## Custom fields are synthesised, not stored
+
+`?fields=claimRef:string,excessAmount:money` makes the API generate values on the fly, so
+custom fields need **no redeploy and no storage**. Values come from an FNV-1a hash of
+`(person.id, field name)`, which matters more than it looks: they must be
+**deterministic**, because a demo where a balance changes between two calls of the same
+number is worse than no demo. Types are `string`, `number`, `money`, `date`; capped at 20
+fields, names sanitised to what Genesys accepts as a property.
+
+`industry=custom` without a spec is a 400 — there would be nothing to return, and failing
+loudly beats an empty record.
+
+A few name heuristics (`status`, `city`, `email`, `name`) produce plausible values instead
+of `FIELDNAME-1234` everywhere, which is the difference between a demo that looks real and
+one that obviously isn't.
+
 ## Adding a field or a dataset
 
 Add the key to every record under the industry's `data` map in `data.mjs` and declare it

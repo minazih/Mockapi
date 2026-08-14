@@ -71,9 +71,23 @@ change the **data action**, not the API — ticking a field adds it to the outpu
 the translation map and the success template together, unticking removes it from all
 three. So you can reshape what Genesys receives live, mid-demo, and re-import in seconds.
 
-Defining genuinely new field *names* is the one thing that does need a redeploy — the API
-cannot invent data it does not hold. The **Custom fields…** option generates both the
-data action and a paste-ready dataset snippet for `data.mjs`.
+**Custom fields need no redeploy either.** Pick **Custom fields…**, name them, and the
+spec travels in the request URL:
+
+```
+/api/v1/lookup?phoneNumber=+966501234001&industry=custom&fields=claimRef:string,excessAmount:money,inspectionDate:date
+```
+
+The API generates values from `(person, field name)`, so nothing is stored and the
+records, the contract and the data action are live as you type. Types are `string`,
+`number`, `money` and `date`; up to 20 fields.
+
+Values are **deterministic** — the same caller always gets the same answer. A demo where
+the balance changes between two calls is worse than no demo. Bare `industry=custom` with
+no spec is a 400, not an empty record.
+
+If you want hand-written values rather than generated ones, the console still emits a
+paste-ready `data.mjs` snippet — that route, and only that route, needs a redeploy.
 
 ### Three behaviours that exist because data actions break on them
 

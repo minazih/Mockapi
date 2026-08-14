@@ -134,10 +134,18 @@ It needs, in this order:
 
    "Custom fields…" gives me rows of name + type (string/number/money/date) that I can
    add and remove. Sanitise names to letters, numbers, hyphen and underscore, since
-   Genesys property names must start with a letter and allow nothing else. It generates
-   the data action correctly AND a paste-ready dataset snippet for data.mjs — and says
-   plainly that custom fields need that paste plus a redeploy, because the API cannot
-   invent data it does not have.
+   Genesys property names must start with a letter and allow nothing else.
+
+   Custom fields must work with NO redeploy. Put the spec in the request URL as
+   ?fields=claimRef:string,excessAmount:money and have the API synthesise values from a
+   hash of (person id, field name). Deterministic, so the same caller always gets the
+   same answer - a demo where a balance changes between two calls is worse than no demo.
+   Cap it at 20 fields. industry=custom with no spec is a 400, not an empty record.
+
+   Re-rendering the editor on every keystroke destroys the input being typed into and
+   drops focus, so only rebuild those rows on add/remove; update everything downstream
+   separately. Debounce the record reload, and guard it with a sequence number, or a
+   slow stale response lands last and shows fields the contract no longer has.
 
 2. TRY IT. Dropdown of the test numbers plus a free-text box, buttons for /lookup and
    /customers, showing the response with status code and timing. Include one number

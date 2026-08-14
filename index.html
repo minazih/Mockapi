@@ -167,15 +167,24 @@
         <button class="sm" onclick="addField()">+ Add field</button>
       </div>
       <div class="note">
-        <strong>Custom fields need a redeploy.</strong> The API cannot invent data it does not have.
-        Paste the snippet below into <code>netlify/functions/lib/data.mjs</code>, inside the
-        <code>INDUSTRIES</code> object, then rebuild the zip and drop it on Netlify again. The data
-        action below is already correct for these fields and does not need regenerating afterwards.
+        <strong>These work immediately — no redeploy.</strong> The field spec travels in the request
+        URL and the API generates values from it, so the records below and the data action are live as
+        soon as you type. Values are deterministic: the same caller always gets the same answer, which
+        is what stops a balance changing between two calls in a demo.
       </div>
-      <div class="row">
-        <button onclick="copyText(snippet(), this)">Copy snippet</button>
-      </div>
-      <pre id="snippet"></pre>
+      <details>
+        <summary style="cursor:pointer;color:var(--muted);font-size:13px">
+          Optional — bake these fields into the dataset permanently
+        </summary>
+        <p class="hint" style="margin-top:10px">
+          Only worth doing if you want hand-written values rather than generated ones. Paste this into
+          <code>netlify/functions/lib/data.mjs</code> inside <code>INDUSTRIES</code>, then redeploy.
+        </p>
+        <div class="row">
+          <button onclick="copyText(snippet(), this)">Copy snippet</button>
+        </div>
+        <pre id="snippet"></pre>
+      </details>
     </div>
   </div>
 
@@ -439,7 +448,14 @@ ${rows}
 
 /* ----------------------------------------------------------------- try it -- */
 
-const q = (extra) => `industry=${encodeURIComponent(industryKey)}${extra || ""}`;
+// Custom fields ride along in the query string and are synthesised server-side,
+// which is what removes the redeploy. Names are already sanitised to
+// [A-Za-z0-9_-] and types come from a fixed list, so the spec needs no encoding
+// and stays readable in the data action's URL template.
+const fieldSpec = () => customFields.filter(f => f.name.trim()).map(f => `${f.name}:${f.type}`).join(",");
+const q = () => isCustom()
+  ? `industry=custom&fields=${fieldSpec()}`
+  : `industry=${encodeURIComponent(industryKey)}`;
 
 async function run(kind) {
   const phone = document.getElementById("phone").value.trim();
@@ -460,17 +476,26 @@ async function run(kind) {
 
 /* ---------------------------------------------------------------- records -- */
 
+// Editing a field spec fires overlapping fetches — a dataset switch loads
+// immediately while keystrokes queue a debounced reload. Without a sequence
+// guard the slower stale response lands last and the table shows fields the
+// contract no longer contains.
+let recordsSeq = 0;
+
 async function loadRecords() {
+  const seq = ++recordsSeq;
   const head = document.getElementById("recHead"), body = document.getElementById("records");
-  if (isCustom()) {
+  // Custom fields load like any other dataset now — the server synthesises them
+  // from the spec in the query string.
+  if (isCustom() && !fieldSpec()) {
     head.innerHTML = "";
-    body.innerHTML = `<tr><td style="color:var(--muted)">Custom fields have no data on the server yet —
-      paste the snippet above into <code>data.mjs</code> and redeploy, then this table fills in.</td></tr>`;
+    body.innerHTML = `<tr><td style="color:var(--muted)">Name at least one field above.</td></tr>`;
     document.getElementById("count").textContent = "";
     return;
   }
   try {
     const rows = await (await fetch(`${BASE}/customers?${q()}`)).json();
+    if (seq !== recordsSeq) return; // superseded by a newer request
     const cols = Object.keys(rows[0] || {});
     head.innerHTML = `<tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr>`;
     body.innerHTML = rows.map(r => `<tr>${cols.map(c =>
@@ -484,6 +509,7 @@ async function loadRecords() {
       pick.onchange = () => { document.getElementById("phone").value = pick.value; };
     }
   } catch {
+    if (seq !== recordsSeq) return; // a stale failure must not overwrite a good table
     body.innerHTML = `<tr><td style="color:var(--red)">Could not reach the API. If you opened this
       file straight from disk, serve it through Netlify — the function only runs there.</td></tr>`;
   }
@@ -526,7 +552,7 @@ function buildActions() {
     actionType: "custom",
     config: {
       request: {
-        requestUrlTemplate: publicBase() + "/lookup?phoneNumber=${input.phoneNumber}&industry=" + industryKey,
+        requestUrlTemplate: publicBase() + "/lookup?phoneNumber=${input.phoneNumber}&" + q(),
         requestType: "GET",
         headers: {},
         requestTemplate: "${input.rawRequest}",
@@ -562,7 +588,7 @@ function buildActions() {
     actionType: "custom",
     config: {
       request: {
-        requestUrlTemplate: publicBase() + "/customers?phoneNumber=${input.phoneNumber}&industry=" + industryKey,
+        requestUrlTemplate: publicBase() + "/customers?phoneNumber=${input.phoneNumber}&" + q(),
         requestType: "GET",
         headers: {},
         requestTemplate: "${input.rawRequest}",
@@ -670,11 +696,16 @@ function dl() {
 // Everything downstream of the model. Safe on every keystroke, because it only
 // writes to elements the user cannot have focus in.
 function refreshDerived() {
-  if (isCustom()) document.getElementById("snippet").textContent = snippet();
+  if (isCustom()) { document.getElementById("snippet").textContent = snippet(); reloadRecordsSoon(); }
   else tickCount();
   buildActions();
   renderAction();
 }
+
+// Custom field values come from the server, so the records table has to be
+// re-fetched when the spec changes — but not once per keystroke.
+let recordsTimer;
+function reloadRecordsSoon() { clearTimeout(recordsTimer); recordsTimer = setTimeout(loadRecords, 400); }
 
 // Full structural rebuild — dataset switch, or first load.
 function refresh() {

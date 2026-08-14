@@ -63,15 +63,85 @@ function personByPhone(raw) {
   return PEOPLE.find((p) => normalisePhone(p.phoneNumber) === key) || null;
 }
 
+/* ------------------------------------------------------- custom field spec -- */
+
+// Custom fields arrive in the URL as ?fields=policyNumber:string,premium:money
+// and are SYNTHESISED on the fly. That is what makes them work without a
+// redeploy: the dataset is a pure function of (person, field name), so nothing
+// has to be stored, and the API stays stateless.
+
+const TYPES = new Set(["string", "number", "money", "date"]);
+const MAX_CUSTOM_FIELDS = 20; // keeps URLs sane and caps the work per request
+
+export function parseFieldSpec(raw) {
+  if (!raw) return null;
+  const out = [];
+  for (const part of String(raw).split(",")) {
+    const [n, t] = part.split(":");
+    // Genesys property names must start with a letter and hold only letters,
+    // numbers, hyphens or underscores.
+    const name = String(n || "").trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40);
+    if (!name || !/^[A-Za-z]/.test(name)) continue;
+    const type = TYPES.has(String(t || "").trim()) ? String(t).trim() : "string";
+    if (!out.some((f) => f.name === name)) out.push({ name, type });
+    if (out.length >= MAX_CUSTOM_FIELDS) break;
+  }
+  return out.length ? out : null;
+}
+
+// FNV-1a. Deterministic on purpose: the same caller must get the same answer
+// every time, because a demo where the balance changes between two calls is
+// worse than no demo at all.
+function hash(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+const STATUSES = ["active", "pending", "suspended", "closed", "in-progress"];
+const CITIES = ["Riyadh", "Jeddah", "Dammam", "Mecca", "Medina", "Khobar"];
+
+// Type drives the shape; a few name heuristics stop every string field reading
+// like FIELDNAME-1234, which makes a live demo look much less synthetic.
+function synth(person, f) {
+  const h = hash(`${person.id}:${f.name}`);
+  const n = h % 10000;
+  switch (f.type) {
+    case "number": return n % 1000;
+    case "money": return Math.round(h % 500000) / 100;      // 0.00 - 4999.99
+    case "date": return (h % 120) - 30;                     // day offset, -30..+89
+    default: {
+      const low = f.name.toLowerCase();
+      if (low.includes("status")) return STATUSES[h % STATUSES.length];
+      if (low.includes("city") || low.includes("branch")) return CITIES[h % CITIES.length];
+      if (low.includes("email")) return `${person.firstName.toLowerCase()}${person.id}@example.com`;
+      if (low.includes("name")) return person.firstName;
+      return `${f.name.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 12)}-${1000 + (n % 9000)}`;
+    }
+  }
+}
+
+// The field list and the stored/synthesised values for a request, whether it
+// named a built-in industry or supplied its own spec.
+const fieldsOf = (key, spec) => spec || INDUSTRIES[key].fields;
+const currencyOf = (key) => (INDUSTRIES[key] ? INDUSTRIES[key].currency : "SAR");
+function payloadOf(person, key, spec) {
+  if (!person) return {};
+  if (spec) return Object.fromEntries(spec.map((f) => [f.name, synth(person, f)]));
+  return INDUSTRIES[key].data[person.id] || {};
+}
+
 /* ------------------------------------------------------------------ shapes -- */
 
 // One record in the mockapi.io-compatible shape: raw stored values, no
 // companions, no found flag.
-function record(person, key) {
-  const ind = INDUSTRIES[key];
-  const payload = ind.data[person.id] || {};
+function record(person, key, spec) {
+  const payload = payloadOf(person, key, spec);
   const out = { ...person };
-  for (const f of ind.fields) {
+  for (const f of fieldsOf(key, spec)) {
     let v = payload[f.name];
     // Dates live in the dataset as day offsets; resolve them to real dates.
     if (f.type === "date" && typeof v === "number") v = iso(new Date(today().getTime() + v * DAY));
@@ -82,24 +152,23 @@ function record(person, key) {
 
 // The flat, contract-stable view. Every key is always present with a typed
 // default, so the Genesys output contract never sees a missing field.
-function flatten(person, key, requestedPhone) {
-  const ind = INDUSTRIES[key];
-  const payload = person ? ind.data[person.id] || {} : {};
+function flatten(person, key, requestedPhone, spec) {
+  const payload = payloadOf(person, key, spec);
   const out = {
     found: !!person,
     lookupStatus: person ? "FOUND" : "NOT_FOUND",
     industry: key,
     phoneNumber: person ? person.phoneNumber : String(requestedPhone || ""),
     firstName: person ? person.firstName : "",
-    currency: ind.currency,
+    currency: currencyOf(key),
   };
-  for (const f of ind.fields) {
+  for (const f of fieldsOf(key, spec)) {
     const raw = payload[f.name];
     switch (f.type) {
       case "money": {
         const n = person && raw != null ? Number(raw) : 0;
         out[f.name] = n;
-        out[f.name + "Text"] = money(n, ind.currency);
+        out[f.name + "Text"] = money(n, currencyOf(key));
         break;
       }
       case "date": {
@@ -126,7 +195,7 @@ function flatten(person, key, requestedPhone) {
 // The output-contract field list for a dataset, companions included. The
 // console reads this to generate the data action, so the contract and the
 // response can never disagree.
-function outputFields(key) {
+function outputFields(key, spec) {
   const out = [
     { name: "found", type: "boolean" },
     { name: "lookupStatus", type: "string" },
@@ -135,7 +204,7 @@ function outputFields(key) {
     { name: "firstName", type: "string" },
     { name: "currency", type: "string" },
   ];
-  for (const f of INDUSTRIES[key].fields) {
+  for (const f of fieldsOf(key, spec)) {
     if (f.type === "money") {
       out.push({ name: f.name, type: "number" }, { name: f.name + "Text", type: "string" });
     } else if (f.type === "date") {
@@ -170,13 +239,20 @@ export default async function handler(req) {
   const fail = parseInt(url.searchParams.get("fail") || "0", 10);
   if (fail >= 400 && fail <= 599) return err(fail, `Simulated failure requested via ?fail=${fail}`);
 
+  // Custom fields travel in the URL and are synthesised per request, so they
+  // need no redeploy and nothing is stored.
+  const spec = parseFieldSpec(url.searchParams.get("fields"));
+
   // Unknown industry is a 400 rather than a silent fallback — a typo in a URL
-  // template should be loud, not quietly return telco data.
+  // template should be loud, not quietly return telco data. "custom" is only
+  // valid alongside a field spec, otherwise there is nothing to return.
   const wanted = (url.searchParams.get("industry") || url.searchParams.get("dataset") || "").toLowerCase();
-  if (wanted && !INDUSTRIES[wanted]) {
-    return err(400, `Unknown industry "${wanted}"`, { available: INDUSTRY_KEYS });
+  if (wanted && !INDUSTRIES[wanted] && !(wanted === "custom" && spec)) {
+    return err(400, wanted === "custom"
+      ? 'industry=custom needs a field spec, e.g. &fields=policyNumber:string,premium:money'
+      : `Unknown industry "${wanted}"`, { available: [...INDUSTRY_KEYS, "custom (with &fields=)"] });
   }
-  const industry = wanted || DEFAULT_INDUSTRY;
+  const industry = spec ? "custom" : (wanted || DEFAULT_INDUSTRY);
 
   // The redirect means the function can see either path form.
   const path = url.pathname
@@ -234,8 +310,8 @@ export default async function handler(req) {
     /* -------- the endpoint Genesys calls on every inbound interaction ------ */
     case "lookup": {
       const phone = phoneParam ?? seg[1];
-      if (!phone) return ok(flatten(null, industry, ""));
-      return ok(flatten(personByPhone(decodeURIComponent(phone)), industry, phone));
+      if (!phone) return ok(flatten(null, industry, "", spec));
+      return ok(flatten(personByPhone(decodeURIComponent(phone)), industry, phone, spec));
     }
 
     /* --------------------------- mockapi.io-compatible resource ------------ */
@@ -244,14 +320,14 @@ export default async function handler(req) {
         const id = decodeURIComponent(seg[1]);
         const p = PEOPLE.find((x) => String(x.id) === id) || personByPhone(id);
         if (!p) return err(404, `No record with id ${id}`);
-        return ok(record(p, industry));
+        return ok(record(p, industry, spec));
       }
       if (phoneParam) {
         const p = personByPhone(decodeURIComponent(phoneParam));
-        return ok(p ? [record(p, industry)] : []); // mockapi returns [] for a filter with no hits
+        return ok(p ? [record(p, industry, spec)] : []); // mockapi returns [] for a filter with no hits
       }
       const limit = parseInt(url.searchParams.get("limit") || "0", 10);
-      const all = PEOPLE.map((p) => record(p, industry));
+      const all = PEOPLE.map((p) => record(p, industry, spec));
       return ok(limit > 0 ? all.slice(0, limit) : all);
     }
 
